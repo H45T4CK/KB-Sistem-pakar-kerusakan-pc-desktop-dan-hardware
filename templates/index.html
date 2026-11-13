@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PC Hardware Diagnostic Studio — Forward Chaining</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #050811;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(14, 165, 233, 0.14), transparent),
+        radial-gradient(circle at 90% 85%, rgba(99, 102, 241, 0.08), transparent 40%);
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.82) 0%, rgba(10, 15, 28, 0.88) 100%);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+    }
+    .hw-node {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+    }
+    .hw-node:hover .hw-box {
+      filter: brightness(1.28);
+      stroke-width: 2.2;
+    }
+    .hw-active-filter .hw-box {
+      stroke: #22d3ee !important;
+      stroke-width: 2.5 !important;
+      filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
+    }
+    .hw-fault .hw-box {
+      fill: rgba(239, 68, 68, 0.22) !important;
+      stroke: #f87171 !important;
+      stroke-width: 2.5 !important;
+      animation: faultPulse 1.6s infinite ease-in-out;
+    }
+    .hw-fault .hw-label {
+      fill: #fecaca !important;
+    }
+    .hw-fault .hw-led {
+      fill: #ef4444 !important;
+    }
+    @keyframes faultPulse {
+      0%, 100% { filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.6)); }
+      50% { filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.15)); }
+    }
+    @keyframes busFlow {
+      to { stroke-dashoffset: -24; }
+    }
+    .bus-line {
+      stroke-dasharray: 4 4;
+      animation: busFlow 1.5s linear infinite;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-enter {
+      animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.6); border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.9); }
+  </style>
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col antialiased selection:bg-cyan-500/30 selection:text-cyan-100">
+
+  <!-- Top Navigation Bar -->
+  <header class="sticky top-0 z-40 bg-[#050811]/85 backdrop-blur-xl border-b border-white/[0.07]">
+    <div class="max-w-[1380px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 p-[1px] shadow-lg shadow-cyan-500/20">
+          <div class="w-full h-full bg-[#070B16] rounded-[11px] flex items-center justify-center text-cyan-400">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-extrabold text-white tracking-tight">PC Hardware Diagnostic Studio</h1>
+            <span class="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span> Forward Chaining
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400">Sistem Pakar Deteksi Kerusakan Hardware PC Desktop</p>
+        </div>
+      </div>
+
+      <!-- Quick Simulation Presets & Reset -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="hidden xl:flex items-center gap-1.5 bg-slate-900/90 border border-white/[0.07] rounded-xl p-1">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-2">Simulasi Cepat:</span>
+          <button onclick="applyPreset('psu')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition cursor-pointer">
+            PSU (R11)
+          </button>
+          <button onclick="applyPreset('ram')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition cursor-pointer">
+            RAM (R28)
+          </button>
+          <button onclick="applyPreset('vga')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition cursor-pointer">
+            VGA (R14)
+          </button>
+          <button onclick="applyPreset('multi')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 transition cursor-pointer">
+            Multi: RAM + HDD
+          </button>
+        </div>
+
+        <button onclick="resetAll()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition cursor-pointer">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Reset
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-[1380px] mx-auto w-full px-4 sm:px-6 py-5 grid lg:grid-cols-12 gap-5 flex-1 items-start">
+
+    <!-- LEFT COLUMN: State Selector & Interactive Hardware Schematic (5 Cols) -->
+    <div class="lg:col-span-5 space-y-5 lg:sticky lg:top-[68px]">
+
+      <!-- Step 1: Kondisi Awal PC -->
+      <section class="panel rounded-2xl p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2.5">
+            <span class="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 font-mono text-xs font-bold flex items-center justify-center">01</span>
+            <div>
+              <h2 class="text-sm font-bold text-white leading-none">Kondisi Awal Perangkat</h2>
+              <p class="text-[11px] text-slate-400 mt-1">Tentukan status boot PC saat ini</p>
+            </div>
+          </div>
+          <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/[0.05] text-slate-400 border border-white/[0.06]">Wajib</span>
+        </div>
+
+        <div id="state-container" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- Step 2: Interactive Hardware Schematic -->
+      <section class="panel rounded-2xl p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2.5">
+            <span class="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 font-mono text-xs font-bold flex items-center justify-center">02</span>
+            <div>
+              <h2 class="text-sm font-bold text-white leading-none">Skematik Topologi PC Desktop</h2>
+              <p class="text-[11px] text-slate-400 mt-1">Klik blok komponen untuk memfilter gejala terkait</p>
+            </div>
+          </div>
+          <span id="map-badge" class="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-800/90 text-slate-400 border border-white/10">
+            STANDBY
+          </span>
+        </div>
+
+        <!-- SVG Diagram Canvas -->
+        <div class="mt-3 bg-[#04070E] border border-white/[0.07] rounded-xl p-3 relative overflow-hidden">
+          <div class="absolute inset-0 opacity-25" style="background-image: radial-gradient(#334155 1px, transparent 1px); background-size: 14px 14px;"></div>
+
+          <svg viewBox="0 0 530 345" class="w-full h-auto select-none relative z-10">
+            <defs>
+              <linearGradient id="screenGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1e293b" />
+                <stop offset="100%" stop-color="#090d16" />
+              </linearGradient>
+            </defs>
+
+            <!-- Zone Titles -->
+            <text x="16" y="18" fill="#64748b" font-size="9.5" font-weight="700" letter-spacing="0.08em">INTERNAL CHASSIS</text>
+            <text x="332" y="18" fill="#64748b" font-size="9.5" font-weight="700" letter-spacing="0.08em">PERIPHERAL & OS</text>
+
+            <!-- PC Tower Frame -->
+            <rect x="14" y="26" width="298" height="308" rx="14" fill="#090e1a" stroke="#1e293b" stroke-width="1.8" />
+            <!-- Front Intake Mesh -->
+            <line x1="303" y1="42" x2="303" y2="318" stroke="#334155" stroke-width="2" stroke-dasharray="5 3" />
+
+            <!-- Animated Bus Lines (PSU -> Mobo & Storage) -->
+            <path d="M96 256 L96 244" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="1.5" class="bus-line" />
+            <path d="M235 256 L235 225 L228 225" stroke="#f472b6" stroke-opacity="0.45" stroke-width="1.5" class="bus-line" />
+            <path d="M214 190 L330 105" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="1.5" class="bus-line" fill="none" />
+
+            <!-- K01: MOTHERBOARD -->
+            <g id="node-K01" class="hw-node" data-sec="S3" onclick="filterByComponent('S3')">
+              <rect class="hw-box" x="28" y="40" width="200" height="202" rx="10" fill="#11192c" stroke="#475569" stroke-width="1.5" />
+              <path d="M38 228 L88 228 L102 216 M152 228 L216 228" stroke="#334155" stroke-width="1.2" fill="none" />
+              <circle class="hw-led" cx="216" cy="52" r="3.2" fill="#475569" />
+              <text class="hw-label" x="38" y="57" fill="#94a3b8" font-size="9.5" font-weight="700">K01 • MOTHERBOARD</text>
+            </g>
+
+            <!-- K02: CPU / PROCESSOR -->
+            <g id="node-K02" class="hw-node" data-sec="S5" onclick="filterByComponent('S5')">
+              <rect class="hw-box" x="44" y="72" width="82" height="74" rx="8" fill="#0b1120" stroke="#38bdf8" stroke-width="1.5" />
+              <circle cx="85" cy="103" r="19" fill="none" stroke="#38bdf8" stroke-opacity="0.25" stroke-width="1.5" stroke-dasharray="4 3" />
+              <circle class="hw-led" cx="116" cy="81" r="2.5" fill="#38bdf8" />
+              <text class="hw-label" x="85" y="106" text-anchor="middle" fill="#38bdf8" font-size="11" font-weight="800">K02</text>
+              <text class="hw-label" x="85" y="136" text-anchor="middle" fill="#cbd5e1" font-size="8.5" font-weight="600">CPU / Cooler</text>
+            </g>
+
+            <!-- K03: RAM -->
+            <g id="node-K03" class="hw-node" data-sec="S3" onclick="filterByComponent('S3')">
+              <rect class="hw-box" x="142" y="70" width="72" height="78" rx="7" fill="#0b1120" stroke="#a78bfa" stroke-width="1.5" />
+              <rect x="155" y="79" width="8" height="40" rx="1.5" fill="#a78bfa" fill-opacity="0.22" stroke="#a78bfa" stroke-width="1" />
+              <rect x="174" y="79" width="8" height="40" rx="1.5" fill="#a78bfa" fill-opacity="0.22" stroke="#a78bfa" stroke-width="1" />
+              <rect x="193" y="79" width="8" height="40" rx="1.5" fill="#a78bfa" fill-opacity="0.22" stroke="#a78bfa" stroke-width="1" />
+              <text class="hw-label" x="178" y="137" text-anchor="middle" fill="#c4b5fd" font-size="9" font-weight="700">K03 • RAM</text>
+            </g>
+
+            <!-- K05: VGA / GPU -->
+            <g id="node-K05" class="hw-node" data-sec="S4" onclick="filterByComponent('S4')">
+              <rect class="hw-box" x="42" y="162" width="172" height="54" rx="8" fill="#0b1120" stroke="#34d399" stroke-width="1.5" />
+              <circle cx="65" cy="189" r="12" fill="none" stroke="#34d399" stroke-opacity="0.3" stroke-width="1.5" />
+              <circle cx="191" cy="189" r="12" fill="none" stroke="#34d399" stroke-opacity="0.3" stroke-width="1.5" />
+              <text class="hw-label" x="128" y="186" text-anchor="middle" fill="#34d399" font-size="10.5" font-weight="800">K05 • VGA (GPU)</text>
+              <text class="hw-label" x="128" y="200" text-anchor="middle" fill="#94a3b8" font-size="8.5">Kartu Grafis</text>
+            </g>
+
+            <!-- K04: POWER SUPPLY (PSU) -->
+            <g id="node-K04" class="hw-node" data-sec="S2" onclick="filterByComponent('S2')">
+              <rect class="hw-box" x="28" y="256" width="136" height="64" rx="9" fill="#11192c" stroke="#fbbf24" stroke-width="1.5" />
+              <circle class="hw-led" cx="152" cy="268" r="2.5" fill="#fbbf24" />
+              <text class="hw-label" x="96" y="284" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="800">K04 • PSU</text>
+              <text class="hw-label" x="96" y="300" text-anchor="middle" fill="#cbd5e1" font-size="8.5">Power Supply</text>
+            </g>
+
+            <!-- K06: STORAGE (HDD / SSD) -->
+            <g id="node-K06" class="hw-node" data-sec="S6" onclick="filterByComponent('S6')">
+              <rect class="hw-box" x="176" y="256" width="118" height="64" rx="9" fill="#11192c" stroke="#f472b6" stroke-width="1.5" />
+              <circle class="hw-led" cx="282" cy="268" r="2.5" fill="#f472b6" />
+              <text class="hw-label" x="235" y="284" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="800">K06 • STORAGE</text>
+              <text class="hw-label" x="235" y="300" text-anchor="middle" fill="#cbd5e1" font-size="8.5">HDD / SSD</text>
+            </g>
+
+            <!-- K07: MONITOR -->
+            <g id="node-K07" class="hw-node" data-sec="S4" onclick="filterByComponent('S4')">
+              <rect class="hw-box" x="330" y="30" width="186" height="132" rx="11" fill="#11192c" stroke="#60a5fa" stroke-width="1.8" />
+              <rect x="342" y="42" width="162" height="96" rx="5" fill="url(#screenGrad)" stroke="#334155" />
+              <circle class="hw-led" cx="423" cy="151" r="2.2" fill="#60a5fa" />
+              <text class="hw-label" x="423" y="86" text-anchor="middle" fill="#60a5fa" font-size="12" font-weight="800">K07 • MONITOR</text>
+              <text class="hw-label" x="423" y="103" text-anchor="middle" fill="#94a3b8" font-size="8.5">Panel LCD/LED & Kabel</text>
+              <path d="M405 162 L441 162 L448 182 L398 182 Z" fill="#334155" />
+              <rect x="386" y="182" width="74" height="5" rx="2.5" fill="#475569" />
+            </g>
+
+            <!-- K08: SISTEM OPERASI (OS) -->
+            <g id="node-K08" class="hw-node" data-sec="S7" onclick="filterByComponent('S7')">
+              <rect class="hw-box" x="330" y="204" width="186" height="116" rx="11" fill="#11192c" stroke="#818cf8" stroke-width="1.5" stroke-dasharray="5 3" />
+              <text class="hw-label" x="423" y="252" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="800">K08 • SISTEM OPERASI</text>
+              <text class="hw-label" x="423" y="269" text-anchor="middle" fill="#cbd5e1" font-size="8.5">Windows, Boot & Driver</text>
+              <text class="hw-label" x="423" y="285" text-anchor="middle" fill="#64748b" font-size="8">(Gejala Overlap Hardware)</text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- Component Quick Status Pills -->
+        <div id="component-pills" class="grid grid-cols-4 gap-1.5 mt-3">
+          <button onclick="filterByComponent('S3')" data-k="K01" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K01 Mobo</button>
+          <button onclick="filterByComponent('S5')" data-k="K02" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K02 CPU</button>
+          <button onclick="filterByComponent('S3')" data-k="K03" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K03 RAM</button>
+          <button onclick="filterByComponent('S2')" data-k="K04" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K04 PSU</button>
+          <button onclick="filterByComponent('S4')" data-k="K05" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K05 VGA</button>
+          <button onclick="filterByComponent('S6')" data-k="K06" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K06 Disk</button>
+          <button onclick="filterByComponent('S4')" data-k="K07" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K07 LCD</button>
+          <button onclick="filterByComponent('S7')" data-k="K08" class="comp-pill px-2 py-1.5 rounded-lg bg-slate-900/90 border border-white/[0.06] text-[10px] font-mono text-slate-400 hover:text-white hover:border-cyan-500/40 transition text-left truncate cursor-pointer">K08 OS</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT COLUMN: Symptom Checklist & Diagnostic Output (7 Cols) -->
+    <div class="lg:col-span-7 flex flex-col gap-5">
+
+      <!-- Step 3: Symptom Checklist Card -->
+      <section class="panel rounded-2xl p-4 sm:p-5 flex flex-col">
+        <!-- Header -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-white/[0.07]">
+          <div class="flex items-center gap-2.5">
+            <span class="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 font-mono text-xs font-bold flex items-center justify-center">03</span>
+            <div>
+              <h2 class="text-sm font-bold text-white leading-none">Identifikasi Gejala Teramati</h2>
+              <p class="text-[11px] text-slate-400 mt-1">Centang minimal 2 gejala aktual yang dialami PC</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-toggle-selected" onclick="toggleShowSelectedOnly()" class="hidden text-[11px] px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/10 transition cursor-pointer">
+              Hanya Terpilih
+            </button>
+            <button id="btn-clear-checks" onclick="clearSelectedSymptoms()" class="hidden text-[11px] px-2.5 py-1 rounded-lg bg-red-950/40 hover:bg-red-950/70 text-red-300 border border-red-800/40 transition cursor-pointer">
+              Hapus Semua
+            </button>
+            <div class="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-200 font-medium">
+              Fakta: <b id="selected-count" class="font-mono text-cyan-400">0</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile/Tablet Quick Presets Bar -->
+        <div class="xl:hidden flex flex-wrap items-center gap-1.5 pt-3 text-[11px]">
+          <span class="text-slate-500 font-medium mr-1">Tes Cepat:</span>
+          <button onclick="applyPreset('psu')" class="px-2 py-0.5 rounded bg-slate-900 border border-white/10 text-slate-300">PSU (R11)</button>
+          <button onclick="applyPreset('ram')" class="px-2 py-0.5 rounded bg-slate-900 border border-white/10 text-slate-300">RAM (R28)</button>
+          <button onclick="applyPreset('vga')" class="px-2 py-0.5 rounded bg-slate-900 border border-white/10 text-slate-300">VGA (R14)</button>
+          <button onclick="applyPreset('multi')" class="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/60 text-cyan-300">Multi: RAM+HDD</button>
+        </div>
+
+        <!-- Filter Controls (Search + Section Tabs) -->
+        <div id="filter-controls" class="hidden pt-3.5 pb-3 border-b border-white/[0.07] space-y-3">
+          <div class="relative">
+            <svg class="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input id="search-input" type="text" oninput="handleSearch(this.value)" placeholder="Cari kode atau gejala (misal: G08, beep, blue screen, kipas, panas)..."
+              class="w-full pl-10 pr-4 py-2 rounded-xl bg-[#060A14] border border-white/10 focus:border-cyan-500/70 focus:outline-none text-xs text-slate-200 placeholder-slate-500 transition" />
+          </div>
+
+          <div id="section-tabs" class="flex flex-wrap gap-1.5 text-xs"></div>
+        </div>
+
+        <!-- Real-Time Contradiction Helper Banner -->
+        <div id="live-contradiction-alert" class="hidden mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 flex items-start gap-2.5 animate-enter">
+          <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div id="live-contradiction-text" class="leading-relaxed"></div>
+        </div>
+
+        <!-- Symptom Cards List -->
+        <div id="symptom-list" class="py-4 space-y-5 max-h-[460px] overflow-y-auto pr-1">
+          <div class="h-60 flex flex-col items-center justify-center text-center border border-dashed border-white/10 rounded-2xl p-6 bg-[#060A14]/50">
+            <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center mb-3 text-cyan-400">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+              </svg>
+            </div>
+            <p class="text-sm font-bold text-slate-200">Mulai dengan Memilih Kondisi Awal PC</p>
+            <p class="text-xs text-slate-400 mt-1 max-w-md leading-relaxed">
+              Pilih kondisi perangkat pada panel <b>01. Kondisi Awal Perangkat</b> di sebelah kiri, atau gunakan tombol <b>Simulasi Cepat</b> di bagian atas untuk melihat contoh diagnosis.
+            </p>
+          </div>
+        </div>
+
+        <!-- Bottom Working Memory & Execute Bar -->
+        <div class="pt-3.5 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
+          <div id="selected-badges" class="flex flex-wrap gap-1.5 text-[11px] flex-1 min-w-[200px]">
+            <span class="text-xs text-slate-500">Working Memory kosong — pilih minimal 2 gejala</span>
+          </div>
+          <button id="btn-diagnose" onclick="runDiagnosis()" disabled
+            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tracking-wide uppercase bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:from-slate-800/90 disabled:to-slate-800/90 disabled:text-slate-500 text-white transition shadow-lg shadow-cyan-500/20 disabled:shadow-none cursor-pointer disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span id="btn-diagnose-text">Pilih 2 Gejala Lagi</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 4: Diagnosis Output & Inference Trace -->
+      <section id="result-panel" class="hidden panel rounded-2xl p-4 sm:p-5 space-y-4 animate-enter">
+        <!-- Populated dynamically -->
+      </section>
+
+    </div>
+  </main>
+
+<script>
+  let masterStates = [];
+  let masterGroups = [];
+  let currentState = null;
+  let activeSectionFilter = 'ALL';
+  let searchQuery = '';
+  let showOnlySelected = false;
+  let selectedSymptoms = new Set();
+  let lastDiagnosisReportText = '';
+
+  const stateIcons = {
+    off: `<svg class="w-4 h-4 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" /></svg>`,
+    blank: `<svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`,
+    bios: `<svg class="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`,
+    windows: `<svg class="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>`
+  };
+
+  // Load Master Data
+  async function loadMasterData() {
+    try {
+      const res = await fetch('/api/master-data');
+      const data = await res.json();
+      masterStates = data.states;
+      masterGroups = data.groups;
+      renderStates();
+    } catch (err) {
+      document.getElementById('state-container').innerHTML = `
+        <div class="col-span-2 text-xs text-red-300 bg-red-950/40 border border-red-800/70 p-3.5 rounded-xl">
+          Gagal terhubung ke Backend Flask. Pastikan <code>python app.py</code> sudah berjalan di port 5000.
+        </div>`;
+    }
+  }
+
+  // Render Step 1 States
+  function renderStates() {
+    const container = document.getElementById('state-container');
+    container.innerHTML = masterStates.map(s => `
+      <label class="cursor-pointer block group">
+        <input type="radio" name="pc_state" value="${s.kode_kondisi}" class="sr-only peer" onchange="selectState('${s.kode_kondisi}')">
+        <div class="h-full p-3 rounded-xl border border-white/[0.08] bg-[#060A14]/70 peer-checked:border-cyan-500 peer-checked:bg-cyan-950/30 peer-checked:shadow-[0_0_20px_rgba(6,182,212,0.12)] group-hover:border-white/20 transition">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-slate-900 border border-white/[0.07] flex items-center justify-center shrink-0">
+                ${stateIcons[s.kode_kondisi] || ''}
+              </div>
+              <span class="font-bold text-xs text-slate-200 group-hover:text-white leading-snug">${s.label}</span>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-2 leading-relaxed">${s.deskripsi}</p>
+        </div>
+      </label>
+    `).join('');
+  }
+
+  function selectState(stateId, keepSymptoms = false) {
+    currentState = stateId;
+    if (!keepSymptoms) selectedSymptoms.clear();
+    activeSectionFilter = 'ALL';
+    searchQuery = '';
+    showOnlySelected = false;
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-controls').classList.remove('hidden');
+    clearMapHighlights();
+    clearNodeFilterHighlight();
+    hideResultPanel();
+    updateUI();
+  }
+
+  // Quick Simulation Presets (100% sesuai rule valid dokumen final)
+  function applyPreset(type) {
+    const presets = {
+      psu:   { state: 'off',     symptoms: ['G04', 'G05'] },
+      ram:   { state: 'windows', symptoms: ['G08', 'G37'] },
+      vga:   { state: 'windows', symptoms: ['G21', 'G34'] },
+      multi: { state: 'windows', symptoms: ['G08', 'G37', 'G29'] }
+    };
+    const p = presets[type];
+    if (!p || masterStates.length === 0) return;
+
+    const radio = document.querySelector(`input[name="pc_state"][value="${p.state}"]`);
+    if (radio) radio.checked = true;
+
+    selectedSymptoms = new Set(p.symptoms);
+    selectState(p.state, true);
+    runDiagnosis();
+  }
+
+  function filterByComponent(sectionCode) {
+    if (!currentState) {
+      alert('Pilih Kondisi Awal Perangkat (Langkah 01) terlebih dahulu.');
+      return;
+    }
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    const exists = available.find(g => g.id === sectionCode);
+    if (exists) {
+      activeSectionFilter = sectionCode;
+      showOnlySelected = false;
+      highlightFilteredNode(sectionCode);
+      renderTabs(available);
+      renderSymptoms(available);
+    }
+  }
+
+  function highlightFilteredNode(sectionCode) {
+    clearNodeFilterHighlight();
+    if (sectionCode !== 'ALL') {
+      document.querySelectorAll(`.hw-node[data-sec="${sectionCode}"]`).forEach(el => {
+        el.classList.add('hw-active-filter');
+      });
+    }
+  }
+
+  function clearNodeFilterHighlight() {
+    document.querySelectorAll('.hw-node').forEach(el => el.classList.remove('hw-active-filter'));
+  }
+
+  function clearSectionFilter() {
+    activeSectionFilter = 'ALL';
+    showOnlySelected = false;
+    clearNodeFilterHighlight();
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    renderTabs(available);
+    renderSymptoms(available);
+  }
+
+  function toggleShowSelectedOnly() {
+    showOnlySelected = !showOnlySelected;
+    const btn = document.getElementById('btn-toggle-selected');
+    btn.className = showOnlySelected
+      ? 'text-[11px] px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold transition cursor-pointer'
+      : 'text-[11px] px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/10 transition cursor-pointer';
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    renderSymptoms(available);
+  }
+
+  function handleSearch(val) {
+    searchQuery = val.toLowerCase().trim();
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    renderSymptoms(available);
+  }
+
+  function updateUI() {
+    const availableGroups = masterGroups.filter(g => g.states.includes(currentState));
+    renderTabs(availableGroups);
+    renderSymptoms(availableGroups);
+    updateSelectionSummary();
+    checkLiveContradiction();
+  }
+
+  function renderTabs(availableGroups) {
+    const tabsEl = document.getElementById('section-tabs');
+    const allBtn = `
+      <button onclick="clearSectionFilter()"
+        class="px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${activeSectionFilter === 'ALL' ? 'bg-cyan-500 text-slate-950 shadow-sm' : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-white/[0.06]'}">
+        Semua (${availableGroups.length})
+      </button>`;
+    const secBtns = availableGroups.map(g => `
+      <button onclick="activeSectionFilter='${g.id}'; showOnlySelected=false; highlightFilteredNode('${g.id}'); renderTabs(masterGroups.filter(x=>x.states.includes(currentState))); renderSymptoms(masterGroups.filter(x=>x.states.includes(currentState)));"
+        class="px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${activeSectionFilter === g.id ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm' : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-white/[0.06]'}">
+        <span class="font-mono font-bold">${g.id}</span> · ${g.title.replace('Gejala ', '')}
+      </button>
+    `).join('');
+    tabsEl.innerHTML = allBtn + secBtns;
+  }
+
+  function renderSymptoms(availableGroups) {
+    const listEl = document.getElementById('symptom-list');
+    let filtered = activeSectionFilter === 'ALL'
+      ? availableGroups
+      : availableGroups.filter(g => g.id === activeSectionFilter);
+
+    if (showOnlySelected) {
+      filtered = filtered.map(g => ({
+        ...g,
+        items: g.items.filter(item => selectedSymptoms.has(item.kode_gejala))
+      })).filter(g => g.items.length > 0);
+    }
+
+    if (searchQuery) {
+      filtered = filtered.map(g => ({
+        ...g,
+        items: g.items.filter(item =>
+          item.kode_gejala.toLowerCase().includes(searchQuery) ||
+          item.nama_gejala.toLowerCase().includes(searchQuery) ||
+          item.deskripsi.toLowerCase().includes(searchQuery)
+        )
+      })).filter(g => g.items.length > 0);
+    }
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="text-center py-12 text-xs text-slate-500">Tidak ada gejala yang sesuai dengan filter saat ini.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(g => `
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-slate-900 border border-white/10 text-cyan-400 font-mono text-[10px] font-bold">${g.id}</span>
+            <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider">${g.title}</h3>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono">${g.items.length} item</span>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-2.5">
+          ${g.items.map(item => {
+            const isChecked = selectedSymptoms.has(item.kode_gejala);
+            return `
+              <label class="group relative flex items-start gap-3 p-3 rounded-xl border transition cursor-pointer select-none ${isChecked ? 'border-cyan-500/80 bg-cyan-950/30 shadow-[0_0_15px_rgba(6,182,212,0.1)]' : 'border-white/[0.07] bg-[#060A14]/75 hover:border-white/20 hover:bg-slate-900/60'}">
+                <input type="checkbox" value="${item.kode_gejala}" ${isChecked ? 'checked' : ''} onchange="toggleSymptom('${item.kode_gejala}', this.checked)" class="sr-only">
+                <span class="w-4 h-4 mt-0.5 rounded flex items-center justify-center shrink-0 border transition ${isChecked ? 'bg-cyan-500 border-cyan-500 text-slate-950' : 'border-slate-600 bg-slate-900 group-hover:border-slate-400'}">
+                  ${isChecked ? `<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>` : ''}
+                </span>
+                <div class="text-xs leading-snug">
+                  <div class="font-semibold text-slate-200">
+                    <span class="font-mono text-cyan-400 font-bold">${item.kode_gejala}</span> · ${item.nama_gejala}
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">${item.deskripsi}</p>
+                </div>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function toggleSymptom(code, isChecked) {
+    if (isChecked) selectedSymptoms.add(code);
+    else selectedSymptoms.delete(code);
+
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    renderSymptoms(available);
+    updateSelectionSummary();
+    checkLiveContradiction();
+  }
+
+  function removeSymptom(code) {
+    selectedSymptoms.delete(code);
+    if (selectedSymptoms.size === 0) showOnlySelected = false;
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    renderSymptoms(available);
+    updateSelectionSummary();
+    checkLiveContradiction();
+  }
+
+  function clearSelectedSymptoms() {
+    selectedSymptoms.clear();
+    showOnlySelected = false;
+    clearMapHighlights();
+    hideResultPanel();
+    checkLiveContradiction();
+    const available = masterGroups.filter(g => g.states.includes(currentState));
+    renderSymptoms(available);
+    updateSelectionSummary();
+  }
+
+  function checkLiveContradiction() {
+    const alertBox = document.getElementById('live-contradiction-alert');
+    const alertText = document.getElementById('live-contradiction-text');
+
+    if (currentState && currentState !== 'off' && (selectedSymptoms.has('G01') || selectedSymptoms.has('G03'))) {
+      alertBox.classList.remove('hidden');
+      alertText.innerHTML = `<b>Catatan Logika:</b> Anda memilih kondisi awal PC menyala, namun mencentang gejala mati daya (<code>G01</code>/<code>G03</code>). Kombinasi yang kontradiktif tidak akan cocok dengan aturan jurnal.`;
+    } else if (selectedSymptoms.has('G01') && selectedSymptoms.has('G07')) {
+      alertBox.classList.remove('hidden');
+      alertText.innerHTML = `<b>Catatan Logika:</b> Gejala <code>G01</code> (Tidak Menyala) dan <code>G07</code> (Menyala Tapi Blank) tidak dapat terjadi bersamaan.`;
+    } else {
+      alertBox.classList.add('hidden');
+    }
+  }
+
+  function updateSelectionSummary() {
+    const count = selectedSymptoms.size;
+    document.getElementById('selected-count').textContent = count;
+
+    const btn = document.getElementById('btn-diagnose');
+    const btnText = document.getElementById('btn-diagnose-text');
+    btn.disabled = count < 2;
+
+    if (count === 0) btnText.textContent = 'Pilih 2 Gejala Lagi';
+    else if (count === 1) btnText.textContent = 'Pilih 1 Gejala Lagi';
+    else btnText.textContent = 'Analisis Forward Chaining';
+
+    const clearBtn = document.getElementById('btn-clear-checks');
+    const toggleBtn = document.getElementById('btn-toggle-selected');
+    if (count > 0) {
+      clearBtn.classList.remove('hidden');
+      toggleBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+      toggleBtn.classList.add('hidden');
+    }
+
+    const badgesEl = document.getElementById('selected-badges');
+    if (count === 0) {
+      badgesEl.innerHTML = `<span class="text-xs text-slate-500">Working Memory kosong — pilih minimal 2 gejala</span>`;
+      return;
+    }
+
+    badgesEl.innerHTML = [...selectedSymptoms].sort().map(code => `
+      <button onclick="removeSymptom('${code}')" title="Klik untuk hapus fakta"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-950/90 hover:bg-red-950/80 border border-cyan-700/60 hover:border-red-700 text-cyan-300 hover:text-red-300 font-mono transition cursor-pointer">
+        ${code} <span class="text-[10px] opacity-75">&times;</span>
+      </button>
+    `).join('');
+  }
+
+  // Execute Inference via Flask API
+  async function runDiagnosis() {
+    clearMapHighlights();
+    clearNodeFilterHighlight();
+    const resPanel = document.getElementById('result-panel');
+    resPanel.classList.remove('hidden');
+    resPanel.innerHTML = `
+      <div class="flex items-center gap-3 text-xs text-cyan-400 py-4">
+        <div class="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+        Mengevaluasi 29 basis aturan Forward Chaining...
+      </div>`;
+
+    try {
+      const response = await fetch('/api/diagnose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symptoms: [...selectedSymptoms] })
+      });
+      const data = await response.json();
+
+      if (data.status === 'warning' || data.status === 'not_found') {
+        resPanel.innerHTML = `
+          <div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-2 animate-enter">
+            <div class="flex items-center gap-2 font-bold text-sm text-amber-400">
+              <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              Kombinasi Gejala Belum Teridentifikasi
+            </div>
+            <p class="leading-relaxed text-slate-300">${data.message}</p>
+            <p class="text-[11px] text-slate-400">Catatan: Mesin inferensi bersifat <i>strict rule-based</i> (operator AND) sesuai 29 aturan valid dari 7 jurnal referensi dan tidak menebak kerusakan di luar aturan.</p>
+          </div>`;
+        resPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      // Highlight Faulty Nodes on SVG & Pills
+      const badge = document.getElementById('map-badge');
+      badge.textContent = `${data.results.length} FAULT DETECTED`;
+      badge.className = 'text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 animate-pulse';
+
+      data.results.forEach(item => {
+        const node = document.getElementById(`node-${item.kode_kerusakan}`);
+        if (node) node.classList.add('hw-fault');
+
+        const pill = document.querySelector(`.comp-pill[data-k="${item.kode_kerusakan}"]`);
+        if (pill) {
+          pill.classList.add('!border-red-500/70', '!bg-red-950/50', '!text-red-300', 'font-bold');
+        }
+      });
+
+      // Build Plain Text Report for Clipboard
+      lastDiagnosisReportText = [
+        `HASIL DIAGNOSIS SISTEM PAKAR PC DESKTOP (FORWARD CHAINING)`,
+        `Fakta Awal: ${data.facts.join(', ')}`,
+        `Rule Terpenuhi: ${data.matched_rules.join(', ')}`,
+        `--------------------------------------------------`,
+        ...data.results.map(d =>
+          `[${d.kode_kerusakan}] ${d.nama_kerusakan} (Rule: ${d.triggered_by.join(', ')})\n` +
+          `Penjelasan: ${d.penjelasan}\n` +
+          `Pemeriksaan Awal: ${d.pemeriksaan_awal}\n` +
+          `Penanganan Mandiri: ${d.rekomendasi_penanganan}\n` +
+          `Tindakan Teknisi: ${d.tindakan_teknisi}\n`
+        )
+      ].join('\n');
+
+      // Render Inference Pipeline + Diagnostic Result Cards
+      resPanel.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-white/[0.07]">
+          <div class="flex items-center gap-2.5">
+            <span class="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">04</span>
+            <div>
+              <h2 class="text-sm font-bold text-white leading-none">Laporan Hasil Inferensi</h2>
+              <p class="text-[11px] text-slate-400 mt-1">Penalaran maju selesai — ${data.results.length} komponen terindikasi bermasalah</p>
+            </div>
+          </div>
+
+          <button id="btn-copy-report" onclick="copyReport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 text-[11px] font-semibold transition cursor-pointer">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Salin Laporan
+          </button>
+        </div>
+
+        <!-- Visual Forward Chaining Pipeline -->
+        <div class="grid sm:grid-cols-3 gap-2 p-3 rounded-xl bg-[#060A14] border border-white/[0.07] text-xs font-mono">
+          <div class="p-2.5 rounded-lg bg-slate-900/70 border border-white/[0.05]">
+            <div class="text-[10px] text-slate-500 uppercase">1. Working Memory (Fakta)</div>
+            <div class="text-slate-200 font-bold mt-1">${data.facts.join(', ')}</div>
+          </div>
+          <div class="p-2.5 rounded-lg bg-slate-900/70 border border-white/[0.05]">
+            <div class="text-[10px] text-slate-500 uppercase">2. Rule Fired (IF-THEN)</div>
+            <div class="text-cyan-400 font-bold mt-1">${data.matched_rules.join(', ')}</div>
+          </div>
+          <div class="p-2.5 rounded-lg bg-slate-900/70 border border-white/[0.05]">
+            <div class="text-[10px] text-slate-500 uppercase">3. Kesimpulan Kerusakan</div>
+            <div class="text-red-400 font-bold mt-1">${data.results.map(r => r.kode_kerusakan).join(', ')}</div>
+          </div>
+        </div>
+
+        <!-- Fault Detail Cards -->
+        <div class="space-y-4">
+          ${data.results.map(d => `
+            <div class="p-4 sm:p-5 rounded-2xl bg-[#060A14]/90 border border-red-500/30 shadow-lg space-y-3.5 animate-enter">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/30">${d.kode_kerusakan}</span>
+                    <span class="text-[11px] text-slate-400">Komponen: <b class="text-slate-200">${d.komponen_terkait}</b></span>
+                  </div>
+                  <h3 class="text-base sm:text-lg font-extrabold text-white mt-1.5">${d.nama_kerusakan}</h3>
+                </div>
+                <span class="text-[11px] text-slate-400 bg-slate-900 px-3 py-1 rounded-lg border border-white/[0.07]">
+                  Aturan Cocok: <b class="text-cyan-400 font-mono">${d.triggered_by.join(', ')}</b>
+                </span>
+              </div>
+
+              <div class="grid sm:grid-cols-2 gap-2.5 text-xs">
+                <div class="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Analisis Gangguan</span>
+                  <p class="text-slate-300 leading-relaxed">${d.penjelasan}</p>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Kemungkinan Penyebab</span>
+                  <p class="text-slate-300 leading-relaxed">${d.penyebab || '-'}</p>
+                </div>
+              </div>
+
+              <div class="grid sm:grid-cols-3 gap-2.5 pt-1">
+                <div class="p-3 rounded-xl bg-slate-900/90 border border-white/[0.07]">
+                  <div class="flex items-center gap-1.5 font-bold text-xs text-cyan-400 mb-1.5">
+                    <span class="w-4 h-4 rounded-full bg-cyan-500/15 flex items-center justify-center text-[10px]">1</span>
+                    Pemeriksaan Awal
+                  </div>
+                  <p class="text-slate-400 text-[11px] leading-relaxed">${d.pemeriksaan_awal}</p>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-900/90 border border-white/[0.07]">
+                  <div class="flex items-center gap-1.5 font-bold text-xs text-emerald-400 mb-1.5">
+                    <span class="w-4 h-4 rounded-full bg-emerald-500/15 flex items-center justify-center text-[10px]">2</span>
+                    Penanganan Mandiri
+                  </div>
+                  <p class="text-slate-400 text-[11px] leading-relaxed">${d.rekomendasi_penanganan}</p>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-900/90 border border-white/[0.07]">
+                  <div class="flex items-center gap-1.5 font-bold text-xs text-amber-400 mb-1.5">
+                    <span class="w-4 h-4 rounded-full bg-amber-500/15 flex items-center justify-center text-[10px]">3</span>
+                    Tindakan Teknisi
+                  </div>
+                  <p class="text-slate-400 text-[11px] leading-relaxed">${d.tindakan_teknisi}</p>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      resPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    } catch (err) {
+      resPanel.innerHTML = `<div class="text-xs text-red-400 p-3 bg-red-950/30 rounded-xl border border-red-800">Terjadi kesalahan koneksi ke server Flask.</div>`;
+    }
+  }
+
+  function copyReport() {
+    if (!lastDiagnosisReportText) return;
+    navigator.clipboard.writeText(lastDiagnosisReportText);
+    const btn = document.getElementById('btn-copy-report');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `<span class="text-emerald-400 font-bold">✓ Laporan Tersalin</span>`;
+    setTimeout(() => { btn.innerHTML = originalHTML; }, 2000);
+  }
+
+  function clearMapHighlights() {
+    document.querySelectorAll('.hw-node').forEach(el => el.classList.remove('hw-fault'));
+    document.querySelectorAll('.comp-pill').forEach(el => {
+      el.classList.remove('!border-red-500/70', '!bg-red-950/50', '!text-red-300', 'font-bold');
+    });
+    const badge = document.getElementById('map-badge');
+    badge.textContent = 'STANDBY';
+    badge.className = 'text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-800/90 text-slate-400 border border-white/10';
+  }
+
+  function hideResultPanel() {
+    const resPanel = document.getElementById('result-panel');
+    resPanel.classList.add('hidden');
+    resPanel.innerHTML = '';
+  }
+
+  function resetAll() {
+    currentState = null;
+    selectedSymptoms.clear();
+    activeSectionFilter = 'ALL';
+    searchQuery = '';
+    showOnlySelected = false;
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-controls').classList.add('hidden');
+    document.getElementById('live-contradiction-alert').classList.add('hidden');
+    document.querySelectorAll('input[name="pc_state"]').forEach(r => r.checked = false);
+    clearMapHighlights();
+    clearNodeFilterHighlight();
+    hideResultPanel();
+
+    document.getElementById('symptom-list').innerHTML = `
+      <div class="h-60 flex flex-col items-center justify-center text-center border border-dashed border-white/10 rounded-2xl p-6 bg-[#060A14]/50">
+        <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center mb-3 text-cyan-400">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+          </svg>
+        </div>
+        <p class="text-sm font-bold text-slate-200">Mulai dengan Memilih Kondisi Awal PC</p>
+        <p class="text-xs text-slate-400 mt-1 max-w-md leading-relaxed">
+          Pilih kondisi perangkat pada panel <b>01. Kondisi Awal Perangkat</b> di sebelah kiri, atau gunakan tombol <b>Simulasi Cepat</b> di bagian atas untuk melihat contoh diagnosis.
+        </p>
+      </div>`;
+    updateSelectionSummary();
+  }
+
+  loadMasterData();
+</script>
+</body>
+</html>
